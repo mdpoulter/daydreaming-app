@@ -231,6 +231,7 @@ final class AppModel: ObservableObject {
     private var consecutiveFailures = 0
     private var retryWhenConnectionRestored = false
     private var wakeObserver: NSObjectProtocol?
+    private var spaceObserver: NSObjectProtocol?
     private var networkMonitor: NWPathMonitor?
     private var networkMonitorID: UUID?
     private var wasNetworkAvailable: Bool?
@@ -379,6 +380,14 @@ final class AppModel: ObservableObject {
             }
         }
 
+        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.restoreDesktopOnActiveSpace() }
+        }
+
         settings.retryUnresolvedPromptFiles()
         hourCache = HourWallpaperCache(directory: ImageStore.cacheDirectory)
         synchronizeSystemAppearance()
@@ -451,12 +460,21 @@ final class AppModel: ObservableObject {
 
     /// macOS may restore its own wallpaper at login before the next scheduled image is due.
     func restoreSavedDesktopAtLaunch() {
-        guard onboardingComplete, settings.automaticUpdates, !isPreparingForAppUpdate,
-              let savedDesktopAtLaunch, displayedImageURL == savedDesktopAtLaunch,
-              sourceAvailable(savedDesktopAtLaunch.path) else { return }
+        guard let savedDesktopAtLaunch, displayedImageURL == savedDesktopAtLaunch else { return }
+        restoreDesktop(savedDesktopAtLaunch)
+    }
+
+    /// macOS only changes the active Space, so other Spaces keep an older wallpaper until they are shown.
+    func restoreDesktopOnActiveSpace() {
+        guard let displayedImageURL, lastUpdated != nil || displayedImageURL == savedDesktopAtLaunch else { return }
+        restoreDesktop(displayedImageURL)
+    }
+
+    private func restoreDesktop(_ url: URL) {
+        guard onboardingComplete, settings.automaticUpdates, !isPreparingForAppUpdate, sourceAvailable(url.path) else { return }
         do {
-            if let hourlyServices { try hourlyServices.apply(savedDesktopAtLaunch) }
-            else if !WallpaperController.isApplied(savedDesktopAtLaunch) { try WallpaperController.apply(savedDesktopAtLaunch) }
+            if let hourlyServices { try hourlyServices.apply(url) }
+            else if !WallpaperController.isApplied(url) { try WallpaperController.apply(url) }
         } catch {
             activity = .failed
             recovery = .retry

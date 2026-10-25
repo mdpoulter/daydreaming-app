@@ -38,6 +38,38 @@ final class AppModelHourlyTests: XCTestCase {
     }
 
     @MainActor
+    func testSwitchingSpacesReappliesTheDesktopWallpaperWithoutCreatingAnImage() throws {
+        let fake = try AppHourlyFake()
+        defer { fake.removeFiles() }
+        let saved = fake.directory.appendingPathComponent("saved-wallpaper.png")
+        try Data("saved wallpaper".utf8).write(to: saved)
+        let nextCheck = fake.clock.addingTimeInterval(1_800)
+        let model = fake.model(nextCheck: nextCheck, savedDesktopAtLaunch: saved)
+
+        model.restoreDesktopOnActiveSpace()
+        model.restoreDesktopOnActiveSpace()
+
+        XCTAssertEqual(fake.applied, [saved, saved])
+        XCTAssertTrue(fake.created.isEmpty)
+        XCTAssertEqual(model.nextCheck(after: fake.clock), nextCheck)
+        XCTAssertNil(model.lastUpdated)
+    }
+
+    @MainActor
+    func testSwitchingSpacesLeavesPausedOrNeverAppliedDesktopsAlone() throws {
+        let fake = try AppHourlyFake()
+        defer { fake.removeFiles() }
+        let saved = fake.directory.appendingPathComponent("saved-wallpaper.png")
+        try Data("saved wallpaper".utf8).write(to: saved)
+        fake.model().restoreDesktopOnActiveSpace()
+        XCTAssertTrue(fake.applied.isEmpty)
+
+        fake.settings.automaticUpdates = false
+        fake.model(savedDesktopAtLaunch: saved).restoreDesktopOnActiveSpace()
+        XCTAssertTrue(fake.applied.isEmpty)
+    }
+
+    @MainActor
     func testModeChangeAppliesFullCacheImmediatelyWithoutPaymentEvenAtTheLimit() async throws {
         let fake = try AppHourlyFake()
         defer { fake.removeFiles() }
