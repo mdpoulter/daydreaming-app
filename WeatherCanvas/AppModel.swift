@@ -330,9 +330,14 @@ final class AppModel: ObservableObject {
             let saved = URL(fileURLWithPath: path)
             displayedImageURL = saved
             savedDesktopAtLaunch = saved
-            desktopWallpaperURL = saved
         } else if let path = settings.sourcePath {
             displayedImageURL = URL(fileURLWithPath: path)
+        }
+        // displayedImagePath can also hold an imported original that never reached the desktop.
+        if let path = UserDefaults.standard.string(forKey: "desktopWallpaperPath"),
+           ImageStore.owns(path),
+           FileManager.default.fileExists(atPath: path) {
+            desktopWallpaperURL = URL(fileURLWithPath: path)
         }
 
         do { imageLedger = try Self.generationLedger() }
@@ -480,7 +485,8 @@ final class AppModel: ObservableObject {
 
     /// macOS only changes the active Space, so other Spaces keep an older wallpaper until they are shown.
     func restoreDesktopOnActiveSpace() {
-        guard onboardingComplete, settings.automaticUpdates, !isPreparingForAppUpdate,
+        // A pending application retry means some displays may already show a newer wallpaper.
+        guard onboardingComplete, settings.automaticUpdates, !isPreparingForAppUpdate, applicationRetry == nil,
               let desktopWallpaperURL, sourceAvailable(desktopWallpaperURL.path) else { return }
         // The next Space switch tries again; a visible failure here would offer a Retry that creates images.
         if let hourlyServices { try? hourlyServices.apply(desktopWallpaperURL) }
@@ -2661,6 +2667,7 @@ final class AppModel: ObservableObject {
         lastUpdated = pipelineNow
         if !isDesignPreview {
             UserDefaults.standard.set(url.path, forKey: "displayedImagePath")
+            UserDefaults.standard.set(url.path, forKey: "desktopWallpaperPath")
             UserDefaults.standard.set(lastUpdated, forKey: "lastWallpaperUpdate")
         }
     }

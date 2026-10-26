@@ -102,6 +102,21 @@ final class AppModelHourlyTests: XCTestCase {
     }
 
     @MainActor
+    func testSwitchingSpacesWaitsForAPendingWallpaperApplication() throws {
+        let fake = try AppHourlyFake()
+        defer { fake.removeFiles() }
+        let saved = fake.directory.appendingPathComponent("saved-wallpaper.png")
+        let newer = fake.directory.appendingPathComponent("newer-wallpaper.png")
+        try Data("saved wallpaper".utf8).write(to: saved)
+        try Data("newer wallpaper".utf8).write(to: newer)
+        fake.applicationRetry = SavedWallpaperApplication(job: fake.job(hour: 14, intent: .automaticWallpaper), url: newer)
+
+        fake.model(savedDesktopAtLaunch: saved).restoreDesktopOnActiveSpace()
+
+        XCTAssertTrue(fake.applied.isEmpty)
+    }
+
+    @MainActor
     func testSpaceSwitchFailureStaysQuietAndCreatesNoImage() throws {
         let fake = try AppHourlyFake()
         defer { fake.removeFiles() }
