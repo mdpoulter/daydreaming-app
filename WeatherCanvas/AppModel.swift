@@ -184,6 +184,8 @@ final class AppModel: ObservableObject {
     private var imageLedger = ImageGenerationLedger()
     private var applicationRetry: SavedWallpaperApplication?
     private var savedDesktopAtLaunch: URL?
+    /// The wallpaper Daydreaming last put on the desktop, unlike displayedImageURL which can fall back to the original.
+    private var desktopWallpaperURL: URL?
     private var visibleFailureIsApplication = false
     private var allowsHourlyPipeline: Bool { !isDesignPreview || hourlyServices != nil }
     private var pipelineNow: Date { hourlyServices?.now() ?? .now }
@@ -328,6 +330,7 @@ final class AppModel: ObservableObject {
             let saved = URL(fileURLWithPath: path)
             displayedImageURL = saved
             savedDesktopAtLaunch = saved
+            desktopWallpaperURL = saved
         } else if let path = settings.sourcePath {
             displayedImageURL = URL(fileURLWithPath: path)
         }
@@ -416,6 +419,7 @@ final class AppModel: ObservableObject {
         generatedToday = imageLedger.count(on: hourlyServices.now())
         hourCache = HourWallpaperCache(directory: hourlyServices.cacheDirectory)
         self.savedDesktopAtLaunch = savedDesktopAtLaunch
+        desktopWallpaperURL = savedDesktopAtLaunch
         displayedImageURL = savedDesktopAtLaunch ?? settings.sourcePath.map { URL(fileURLWithPath: $0) }
         if hourlyServices.runsBackgroundTasks {
             precondition(hourlyServices.sleep != nil, "Injected background scheduling requires an injected sleep")
@@ -460,27 +464,27 @@ final class AppModel: ObservableObject {
 
     /// macOS may restore its own wallpaper at login before the next scheduled image is due.
     func restoreSavedDesktopAtLaunch() {
-        guard let savedDesktopAtLaunch, displayedImageURL == savedDesktopAtLaunch else { return }
-        restoreDesktop(savedDesktopAtLaunch)
-    }
-
-    /// macOS only changes the active Space, so other Spaces keep an older wallpaper until they are shown.
-    func restoreDesktopOnActiveSpace() {
-        guard let displayedImageURL, lastUpdated != nil || displayedImageURL == savedDesktopAtLaunch else { return }
-        restoreDesktop(displayedImageURL)
-    }
-
-    private func restoreDesktop(_ url: URL) {
-        guard onboardingComplete, settings.automaticUpdates, !isPreparingForAppUpdate, sourceAvailable(url.path) else { return }
+        guard onboardingComplete, settings.automaticUpdates, !isPreparingForAppUpdate,
+              let savedDesktopAtLaunch, displayedImageURL == savedDesktopAtLaunch,
+              sourceAvailable(savedDesktopAtLaunch.path) else { return }
         do {
-            if let hourlyServices { try hourlyServices.apply(url) }
-            else if !WallpaperController.isApplied(url) { try WallpaperController.apply(url) }
+            if let hourlyServices { try hourlyServices.apply(savedDesktopAtLaunch) }
+            else if !WallpaperController.isApplied(savedDesktopAtLaunch) { try WallpaperController.apply(savedDesktopAtLaunch) }
         } catch {
             activity = .failed
             recovery = .retry
             status = "Could not restore your wallpaper"
             detail = error.localizedDescription
         }
+    }
+
+    /// macOS only changes the active Space, so other Spaces keep an older wallpaper until they are shown.
+    func restoreDesktopOnActiveSpace() {
+        guard onboardingComplete, settings.automaticUpdates, !isPreparingForAppUpdate,
+              let desktopWallpaperURL, sourceAvailable(desktopWallpaperURL.path) else { return }
+        // The next Space switch tries again; a visible failure here would offer a Retry that creates images.
+        if let hourlyServices { try? hourlyServices.apply(desktopWallpaperURL) }
+        else { try? WallpaperController.replaceOutdatedWallpapers(with: desktopWallpaperURL) }
     }
 
     var sourceImageURL: URL? {
@@ -2653,6 +2657,7 @@ final class AppModel: ObservableObject {
         if let hourlyServices { try hourlyServices.apply(url) }
         else { try WallpaperController.apply(url) }
         displayedImageURL = url
+        desktopWallpaperURL = url
         lastUpdated = pipelineNow
         if !isDesignPreview {
             UserDefaults.standard.set(url.path, forKey: "displayedImagePath")

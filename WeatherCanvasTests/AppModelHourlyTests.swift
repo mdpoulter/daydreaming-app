@@ -38,7 +38,7 @@ final class AppModelHourlyTests: XCTestCase {
     }
 
     @MainActor
-    func testSwitchingSpacesReappliesTheDesktopWallpaperWithoutCreatingAnImage() throws {
+    func testSwitchingSpacesReappliesTheSavedDesktopWithoutCreatingAnImage() throws {
         let fake = try AppHourlyFake()
         defer { fake.removeFiles() }
         let saved = fake.directory.appendingPathComponent("saved-wallpaper.png")
@@ -56,6 +56,33 @@ final class AppModelHourlyTests: XCTestCase {
     }
 
     @MainActor
+    func testSwitchingSpacesReappliesTheWallpaperAppliedThisSession() async throws {
+        let fake = try AppHourlyFake()
+        defer { fake.removeFiles() }
+        fake.settings.systemAppearance = .light
+        fake.previewWindowActive = false
+        var dark = fake.settings
+        dark.systemAppearance = .dark
+        let saved = fake.directory.appendingPathComponent("dark-cache.png")
+        try Data("saved full wallpaper".utf8).write(to: saved)
+        var cache = HourWallpaperCache(directory: fake.directory)
+        try cache.record(pictureID: HourWallpaperCache.pictureID(for: dark), recipeID: HourWallpaperCache.recipeID(for: dark),
+                         hour: 14, weather: WeatherSnapshot(label: "clear", symbol: "sun.max", fetchedAt: fake.clock),
+                         url: saved, settingsSnapshot: dark)
+        let model = fake.model(nextCheck: fake.clock.addingTimeInterval(21_600))
+        defer { model.stopBackgroundTasks(); fake.sleeper.cancelAll() }
+        model.restoreDesktopOnActiveSpace()
+        XCTAssertTrue(fake.applied.isEmpty)
+
+        model.setSystemAppearance(.dark)
+        await appEventually { fake.applied == [saved] }
+        model.restoreDesktopOnActiveSpace()
+
+        XCTAssertEqual(fake.applied, [saved, saved])
+        XCTAssertTrue(fake.created.isEmpty)
+    }
+
+    @MainActor
     func testSwitchingSpacesLeavesPausedOrNeverAppliedDesktopsAlone() throws {
         let fake = try AppHourlyFake()
         defer { fake.removeFiles() }
@@ -67,6 +94,31 @@ final class AppModelHourlyTests: XCTestCase {
         fake.settings.automaticUpdates = false
         fake.model(savedDesktopAtLaunch: saved).restoreDesktopOnActiveSpace()
         XCTAssertTrue(fake.applied.isEmpty)
+
+        fake.settings.automaticUpdates = true
+        try FileManager.default.removeItem(at: saved)
+        fake.model(savedDesktopAtLaunch: saved).restoreDesktopOnActiveSpace()
+        XCTAssertTrue(fake.applied.isEmpty)
+    }
+
+    @MainActor
+    func testSpaceSwitchFailureStaysQuietAndCreatesNoImage() throws {
+        let fake = try AppHourlyFake()
+        defer { fake.removeFiles() }
+        let saved = fake.directory.appendingPathComponent("saved-wallpaper.png")
+        try Data("saved wallpaper".utf8).write(to: saved)
+        fake.failApply = true
+        let model = fake.model(savedDesktopAtLaunch: saved)
+        let status = model.status
+        let activity = model.activity
+
+        model.restoreDesktopOnActiveSpace()
+
+        XCTAssertEqual(fake.applied, [saved])
+        XCTAssertEqual(model.status, status)
+        XCTAssertEqual(model.activity, activity)
+        XCTAssertNil(model.recovery)
+        XCTAssertTrue(fake.created.isEmpty)
     }
 
     @MainActor

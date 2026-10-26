@@ -10,6 +10,15 @@ final class WallpaperControllerTests: XCTestCase {
         XCTAssertEqual((options[.allowClipping] as? NSNumber)?.boolValue, true)
     }
 
+    func testOnlyOlderDaydreamingWallpapersAreOutdated() {
+        let current = URL(fileURLWithPath: "/Daydreaming/Cache/new.png")
+        let owns: (String) -> Bool = { $0.hasPrefix("/Daydreaming/") }
+        XCTAssertTrue(WallpaperController.isOutdated(URL(fileURLWithPath: "/Daydreaming/Cache/old.png"), current: current, owns: owns))
+        XCTAssertFalse(WallpaperController.isOutdated(URL(fileURLWithPath: "/Daydreaming/Cache/./new.png"), current: current, owns: owns))
+        XCTAssertFalse(WallpaperController.isOutdated(URL(fileURLWithPath: "/System/Library/Desktop Pictures/Tahoe.heic"), current: current, owns: owns))
+        XCTAssertFalse(WallpaperController.isOutdated(nil, current: current, owns: owns))
+    }
+
     func testPortraitPictureFillsLandscapeScreenWithoutStretchingOrEmptyBands() throws {
         let image = CGSize(width: 900, height: 1600)
         let screen = CGSize(width: 1920, height: 1080)

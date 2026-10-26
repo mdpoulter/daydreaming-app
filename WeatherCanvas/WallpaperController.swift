@@ -25,6 +25,22 @@ enum WallpaperController {
         }
     }
 
+    /// Replaces older Daydreaming wallpapers on the active Space, leaving pictures the user chose elsewhere alone.
+    static func replaceOutdatedWallpapers(with imageURL: URL) throws {
+        var firstError: Error?
+        for screen in NSScreen.screens
+        where isOutdated(NSWorkspace.shared.desktopImageURL(for: screen), current: imageURL, owns: ImageStore.owns) {
+            do { try NSWorkspace.shared.setDesktopImageURL(imageURL, for: screen, options: desktopOptions) }
+            catch { firstError = firstError ?? error }
+        }
+        if let firstError { throw firstError }
+    }
+
+    nonisolated static func isOutdated(_ shown: URL?, current: URL, owns: (String) -> Bool) -> Bool {
+        guard let shown, shown.isFileURL else { return false }
+        return shown.standardizedFileURL != current.standardizedFileURL && owns(shown.path)
+    }
+
     static func isApplied(_ imageURL: URL) -> Bool {
         let screens = NSScreen.screens
         return !screens.isEmpty && screens.allSatisfy {
