@@ -2490,8 +2490,6 @@ final class AppModel: ObservableObject {
                 return
             }
             if let failure = error as? WallpaperApplicationFailure {
-                applicationRetry = failure.saved
-                persistApplicationRetry()
                 show(failure.underlying)
                 visibleFailureIsApplication = true
                 scheduleRetry()
@@ -2674,7 +2672,12 @@ final class AppModel: ObservableObject {
 
     private func applySavedWallpaper(_ saved: SavedWallpaperApplication) throws {
         activity = .applying
-        try applyPictureToDesktop(saved.url)
+        do { try applyPictureToDesktop(saved.url) }
+        catch {
+            applicationRetry = saved
+            persistApplicationRetry()
+            throw error
+        }
         if saved.job.settings.systemAppearance == settings.systemAppearance { appearanceUpdatePending = false }
         latestWeather = saved.job.weather
         cachedWallpaperUseMessage = nil

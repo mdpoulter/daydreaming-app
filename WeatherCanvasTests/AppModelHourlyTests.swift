@@ -105,12 +105,13 @@ final class AppModelHourlyTests: XCTestCase {
 
         model.setSystemAppearance(.dark)
         await appEventually { model.activity == .failed && fake.applied == [saved] }
+        let retryCheck = model.nextCheck(after: fake.clock)
         model.restoreDesktopOnActiveSpace()
 
         XCTAssertEqual(fake.applied, [saved])
         XCTAssertEqual(model.displayedImageURL, previous)
         XCTAssertEqual(fake.applicationRetry?.url, saved)
-        XCTAssertEqual(model.nextCheck(after: fake.clock), nextCheck)
+        XCTAssertEqual(model.nextCheck(after: fake.clock), retryCheck)
         XCTAssertNil(model.lastUpdated)
         XCTAssertTrue(fake.created.isEmpty)
 
